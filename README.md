@@ -17,15 +17,11 @@ with pexpect" approach: nothing is killed, no supervisor coordination
 > (`ghcr.io/sometimeskind/bridge-monitor`). Context: homelab issues #935 / this
 > repo's #1.
 
-## Subcommands
+## Usage
 
-```
-bridge-monitor serve   # metrics on :9100, re-auth web UI on :8080
-bridge-monitor login   # terminal re-auth fallback (for mail-reauth.sh via kubectl exec)
-```
-
-Run `bridge-monitor <cmd> -h` for flags. All paths and ports default to the
-homelab layout and are overridable:
+`bridge-monitor` is a single long-running process: metrics on `:9100` and the
+re-auth web UI on `:8080`. Run `bridge-monitor -h` for flags. All paths and
+ports default to the homelab layout and are overridable:
 
 | Flag | Default |
 |------|---------|
@@ -52,7 +48,7 @@ sealed `totp-seed`.
 ## IMAP password changes
 
 After a successful re-auth the new IMAP password is compared against the sealed
-`bridge-imap-password`. If it changed, the UI / CLI surfaces the new value with a
+`bridge-imap-password`. If it changed, the UI surfaces the new value with a
 note to **re-seal it manually in the homelab repo** (`kubeseal`). There is no
 auto-PR.
 

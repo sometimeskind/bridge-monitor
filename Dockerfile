@@ -17,4 +17,3 @@ COPY --from=build /out/bridge-monitor /usr/local/bin/bridge-monitor
 
 EXPOSE 9100 8080
 ENTRYPOINT ["bridge-monitor"]
-CMD ["serve"]

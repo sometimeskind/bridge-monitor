@@ -1,6 +1,5 @@
 // Command bridge-monitor is a Proton Bridge sidecar: it exports Prometheus
-// metrics and serves a re-auth web UI (serve), and provides a CLI re-auth
-// fallback (login), both driving the bridge gRPC API.
+// metrics and serves a re-auth web UI, both driving the bridge gRPC API.
 package main
 
 import (
@@ -16,6 +15,9 @@ import (
 	"github.com/sometimeskind/bridge-monitor/internal/serve"
 )
 
+// version is overridable at build time with -ldflags "-X main.version=...".
+var version = "dev"
+
 const (
 	defaultEmailFile    = "/secrets/bridge-login-credentials/email"
 	defaultTOTPSeedFile = "/secrets/bridge-login-credentials/totp-seed"
@@ -23,55 +25,20 @@ const (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+	grpcConfig := flag.String("grpc-config", defaultGRPCConfig(), "path to bridge grpcServerConfig.json")
+	emailFile := flag.String("email-file", defaultEmailFile, "path to the login email secret")
+	totpSeed := flag.String("totp-seed", defaultTOTPSeedFile, "path to the TOTP seed secret")
+	imapPass := flag.String("imap-password-file", defaultIMAPPassFile, "path to the sealed IMAP password")
+	metricsAddr := flag.String("metrics-addr", ":9100", "metrics listen address")
+	webAddr := flag.String("web-addr", ":8080", "web UI listen address")
+	pollInterval := flag.Duration("poll-interval", 30*time.Second, "metrics poll interval")
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
 	}
-	switch os.Args[1] {
-	case "serve":
-		runServe(os.Args[2:])
-	case "login":
-		runLogin(os.Args[2:])
-	case "-h", "--help", "help":
-		usage()
-	default:
-		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n\n", os.Args[1])
-		usage()
-		os.Exit(2)
-	}
-}
-
-func usage() {
-	fmt.Fprint(os.Stderr, `bridge-monitor — Proton Bridge sidecar
-
-Usage:
-  bridge-monitor serve [flags]   run metrics (:9100) and re-auth web UI (:8080)
-  bridge-monitor login [flags]   re-auth from the terminal (prompts for password)
-
-Run "bridge-monitor <subcommand> -h" for flags.
-`)
-}
-
-// defaultGRPCConfig returns the bridge's grpcServerConfig.json under the user
-// config dir (honouring XDG_CONFIG_HOME / HOME). Overridable with --grpc-config.
-func defaultGRPCConfig() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		dir = "/root/.config"
-	}
-	return filepath.Join(dir, "protonmail", "bridge-v3", "grpcServerConfig.json")
-}
-
-func runServe(args []string) {
-	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	grpcConfig := fs.String("grpc-config", defaultGRPCConfig(), "path to bridge grpcServerConfig.json")
-	emailFile := fs.String("email-file", defaultEmailFile, "path to the login email secret")
-	totpSeed := fs.String("totp-seed", defaultTOTPSeedFile, "path to the TOTP seed secret")
-	imapPass := fs.String("imap-password-file", defaultIMAPPassFile, "path to the sealed IMAP password")
-	metricsAddr := fs.String("metrics-addr", ":9100", "metrics listen address")
-	webAddr := fs.String("web-addr", ":8080", "web UI listen address")
-	pollInterval := fs.Duration("poll-interval", 30*time.Second, "metrics poll interval")
-	_ = fs.Parse(args)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -86,7 +53,17 @@ func runServe(args []string) {
 		PollInterval:     *pollInterval,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		fmt.Fprintf(os.Stderr, "bridge-monitor: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// defaultGRPCConfig returns the bridge's grpcServerConfig.json under the user
+// config dir (honouring XDG_CONFIG_HOME / HOME). Overridable with --grpc-config.
+func defaultGRPCConfig() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		dir = "/root/.config"
+	}
+	return filepath.Join(dir, "protonmail", "bridge-v3", "grpcServerConfig.json")
 }
