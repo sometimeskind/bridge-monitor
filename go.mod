@@ -3,7 +3,6 @@ module github.com/sometimeskind/bridge-monitor
 go 1.26.4
 
 require (
-	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/sync v0.21.0
 	google.golang.org/grpc v1.81.1
@@ -12,7 +11,6 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect

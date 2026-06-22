@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/sometimeskind/bridge-monitor/internal/reauth"
 	"github.com/sometimeskind/bridge-monitor/internal/secrets"
-	"github.com/sometimeskind/bridge-monitor/internal/totp"
 )
 
 // loginTimeout bounds a single re-auth attempt so a missing event cannot hang
@@ -22,19 +22,17 @@ const loginTimeout = 60 * time.Second
 // serialized: the bridge holds a single in-flight login state server-side, so
 // two concurrent re-auths would clobber each other.
 type webHandler struct {
-	cfg          reauth.Config
-	emailFile    string
-	totpSeedFile string
-	tmpl         *template.Template
-	mu           sync.Mutex
+	cfg       reauth.Config
+	emailFile string
+	tmpl      *template.Template
+	mu        sync.Mutex
 }
 
-func newWebHandler(cfg reauth.Config, emailFile, totpSeedFile string) *webHandler {
+func newWebHandler(cfg reauth.Config, emailFile string) *webHandler {
 	return &webHandler{
-		cfg:          cfg,
-		emailFile:    emailFile,
-		totpSeedFile: totpSeedFile,
-		tmpl:         template.Must(template.New("web").Parse(webTemplates)),
+		cfg:       cfg,
+		emailFile: emailFile,
+		tmpl:      template.Must(template.New("web").Parse(webTemplates)),
 	}
 }
 
@@ -69,6 +67,11 @@ func (h *webHandler) handleAuth(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "result", resultData{Error: "password is required"})
 		return
 	}
+	code := strings.TrimSpace(r.PostFormValue("totp"))
+	if code == "" {
+		h.render(w, "result", resultData{Error: "2FA code is required"})
+		return
+	}
 
 	email, err := secrets.Read(h.emailFile)
 	if err != nil {
@@ -79,13 +82,6 @@ func (h *webHandler) handleAuth(w http.ResponseWriter, r *http.Request) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
-
-	code, err := totp.FromSeedFile(h.totpSeedFile)
-	if err != nil {
-		slog.Error("generate TOTP", "err", err)
-		h.render(w, "result", resultData{Error: "server misconfiguration: cannot generate 2FA code"})
-		return
-	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), loginTimeout)
 	defer cancel()
@@ -161,6 +157,8 @@ button{margin-top:1rem;padding:.6rem 1rem;font-size:1rem}</style></head>
 <input id="email" name="email" type="email" value="{{.Email}}" readonly>
 <label for="password">Password</label>
 <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+<label for="totp">2FA code</label>
+<input id="totp" name="totp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]*" required>
 <button type="submit">Re-authenticate</button>
 </form></body></html>{{end}}
 

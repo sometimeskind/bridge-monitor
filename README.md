@@ -27,15 +27,15 @@ ports default to the homelab layout and are overridable:
 |------|---------|
 | `--grpc-config` | `$XDG_CONFIG_HOME/protonmail/bridge-v3/grpcServerConfig.json` |
 | `--email-file` | `/secrets/bridge-login-credentials/email` |
-| `--totp-seed` | `/secrets/bridge-login-credentials/totp-seed` |
 | `--imap-password-file` | `/secrets/bridge-imap-password/password` |
 | `--metrics-addr` | `:9100` |
 | `--web-addr` | `:8080` |
 | `--poll-interval` | `30s` |
 
-The login **password is never stored** in the cluster — the operator supplies it
-in the form (1Password autofills); the TOTP code is generated in-process from the
-sealed `totp-seed`.
+**No login credentials are stored in the cluster.** The operator supplies the
+password and the 2FA code in the form — both autofilled by 1Password (the 2FA
+field uses `autocomplete="one-time-code"`). Only the email (pre-filled hint) and
+the sealed IMAP password (for change detection) are mounted.
 
 ## Metrics
 

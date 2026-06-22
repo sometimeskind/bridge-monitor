@@ -20,14 +20,12 @@ var version = "dev"
 
 const (
 	defaultEmailFile    = "/secrets/bridge-login-credentials/email"
-	defaultTOTPSeedFile = "/secrets/bridge-login-credentials/totp-seed"
 	defaultIMAPPassFile = "/secrets/bridge-imap-password/password"
 )
 
 func main() {
 	grpcConfig := flag.String("grpc-config", defaultGRPCConfig(), "path to bridge grpcServerConfig.json")
 	emailFile := flag.String("email-file", defaultEmailFile, "path to the login email secret")
-	totpSeed := flag.String("totp-seed", defaultTOTPSeedFile, "path to the TOTP seed secret")
 	imapPass := flag.String("imap-password-file", defaultIMAPPassFile, "path to the sealed IMAP password")
 	metricsAddr := flag.String("metrics-addr", ":9100", "metrics listen address")
 	webAddr := flag.String("web-addr", ":8080", "web UI listen address")
@@ -46,7 +44,6 @@ func main() {
 	err := serve.Run(ctx, serve.Options{
 		GRPCConfigPath:   *grpcConfig,
 		EmailFile:        *emailFile,
-		TOTPSeedFile:     *totpSeed,
 		IMAPPasswordFile: *imapPass,
 		MetricsAddr:      *metricsAddr,
 		WebAddr:          *webAddr,

@@ -19,7 +19,6 @@ import (
 type Options struct {
 	GRPCConfigPath   string
 	EmailFile        string
-	TOTPSeedFile     string
 	IMAPPasswordFile string
 	MetricsAddr      string // e.g. ":9100"
 	WebAddr          string // e.g. ":8080"
@@ -35,7 +34,7 @@ func Run(ctx context.Context, opts Options) error {
 	web := newWebHandler(reauth.Config{
 		GRPCConfigPath:   opts.GRPCConfigPath,
 		IMAPPasswordFile: opts.IMAPPasswordFile,
-	}, opts.EmailFile, opts.TOTPSeedFile)
+	}, opts.EmailFile)
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
