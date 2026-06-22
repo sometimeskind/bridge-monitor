@@ -1,0 +1,8 @@
+.git
+.github
+*_test.go
+README.md
+buf.yaml
+buf.gen.yaml
+Dockerfile
+.dockerignore

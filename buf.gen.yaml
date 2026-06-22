@@ -1,0 +1,15 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    # The vendored proto declares ProtonMail's internal go_package; redirect the
+    # generated stubs into this module instead of editing the vendored file.
+    - file_option: go_package_prefix
+      value: github.com/sometimeskind/bridge-monitor/internal/pb
+plugins:
+  - local: protoc-gen-go
+    out: internal/pb
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: internal/pb
+    opt: paths=source_relative
