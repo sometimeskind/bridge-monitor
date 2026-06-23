@@ -9,6 +9,7 @@ import (
 
 	"github.com/sometimeskind/bridge-monitor/internal/bridge"
 	"github.com/sometimeskind/bridge-monitor/internal/pb"
+	"github.com/sometimeskind/bridge-monitor/internal/secrets"
 )
 
 // metrics holds the bridge gauges exported on /metrics.
@@ -16,6 +17,7 @@ type metrics struct {
 	accountState     *prometheus.GaugeVec
 	accountConnected prometheus.Gauge
 	grpcUp           prometheus.Gauge
+	imapLoginOK      prometheus.Gauge
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -32,15 +34,19 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "bridge_grpc_up",
 			Help: "1 if the bridge gRPC API answered the last poll, else 0.",
 		}),
+		imapLoginOK: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "bridge_imap_login_ok",
+			Help: "1 if an authenticated IMAP LOGIN against the local bridge listener succeeded on the last poll, else 0.",
+		}),
 	}
-	reg.MustRegister(m.accountState, m.accountConnected, m.grpcUp)
+	reg.MustRegister(m.accountState, m.accountConnected, m.grpcUp, m.imapLoginOK)
 	return m
 }
 
 // poll connects to the bridge, reads the user list, and updates the gauges. A
 // failure to connect or list users sets bridge_grpc_up=0 and clears the per-user
 // state so stale series do not linger.
-func (m *metrics) poll(ctx context.Context, configPath string) {
+func (m *metrics) poll(ctx context.Context, configPath, emailFile, imapPasswordFile string) {
 	c, err := bridge.Connect(configPath)
 	if err != nil {
 		m.markDown()
@@ -70,11 +76,41 @@ func (m *metrics) poll(ctx context.Context, configPath string) {
 		}
 	}
 	m.accountConnected.Set(boolToFloat(anyConnected))
+	m.imapLoginOK.Set(boolToFloat(m.probeIMAP(ctx, c, emailFile, imapPasswordFile)))
+}
+
+// probeIMAP runs an authenticated IMAP LOGIN/LOGOUT against the bridge's
+// local listener, the only signal that distinguishes a de-authed session
+// (which stays CONNECTED locally) from a healthy one. Any failure along the
+// way — fetching the listener settings, reading the secrets, or the login
+// itself — reports unhealthy rather than failing the whole poll.
+func (m *metrics) probeIMAP(ctx context.Context, c *bridge.Client, emailFile, imapPasswordFile string) bool {
+	port, useSSL, err := c.MailServerSettings(ctx)
+	if err != nil {
+		slog.Warn("metrics poll: MailServerSettings failed", "err", err)
+		return false
+	}
+	email, err := secrets.Read(emailFile)
+	if err != nil {
+		slog.Warn("metrics poll: read email file failed", "err", err)
+		return false
+	}
+	password, err := secrets.Read(imapPasswordFile)
+	if err != nil {
+		slog.Warn("metrics poll: read imap password file failed", "err", err)
+		return false
+	}
+	if err := bridge.ProbeIMAPLogin(ctx, port, useSSL, email, []byte(password)); err != nil {
+		slog.Warn("metrics poll: imap login probe failed", "err", err)
+		return false
+	}
+	return true
 }
 
 func (m *metrics) markDown() {
 	m.grpcUp.Set(0)
 	m.accountConnected.Set(0)
+	m.imapLoginOK.Set(0)
 	m.accountState.Reset()
 }
 
@@ -86,11 +122,11 @@ func boolToFloat(b bool) float64 {
 }
 
 // runPoller polls immediately and then on every tick until ctx is cancelled.
-func (m *metrics) runPoller(ctx context.Context, configPath string, interval time.Duration) {
+func (m *metrics) runPoller(ctx context.Context, configPath, emailFile, imapPasswordFile string, interval time.Duration) {
 	pollOnce := func() {
 		pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		m.poll(pctx, configPath)
+		m.poll(pctx, configPath, emailFile, imapPasswordFile)
 	}
 	pollOnce()
 
