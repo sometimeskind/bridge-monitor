@@ -104,6 +104,44 @@ func TestLoginAlreadyLoggedIn(t *testing.T) {
 	}
 }
 
+func TestLoginTfaOrFidoFallsBackToTOTP(t *testing.T) {
+	cfg := startFakeBridge(t, scenario{
+		wantPassword: "hunter2",
+		wantTOTP:     "123456",
+		imapPassword: []byte("imap-secret"),
+		loginEmits: func(f *fakeBridge, username string) {
+			f.emit(&pb.LoginEvent{Event: &pb.LoginEvent_TfaOrFidoRequested{
+				TfaOrFidoRequested: &pb.LoginTfaOrFidoRequestedEvent{Username: username}}})
+		},
+	})
+	c := connect(t, cfg)
+
+	res, err := c.Login(ctx(t), "me@example.com", []byte("hunter2"), "123456")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if string(res.IMAPPassword) != "imap-secret" {
+		t.Errorf("IMAP password = %q, want imap-secret", res.IMAPPassword)
+	}
+}
+
+func TestLoginFidoOnlyUnsupported(t *testing.T) {
+	cfg := startFakeBridge(t, scenario{
+		wantPassword: "hunter2",
+		loginEmits: func(f *fakeBridge, username string) {
+			f.emit(&pb.LoginEvent{Event: &pb.LoginEvent_FidoRequested{
+				FidoRequested: &pb.LoginFidoRequestedEvent{}}})
+		},
+	})
+	c := connect(t, cfg)
+
+	_, err := c.Login(ctx(t), "me@example.com", []byte("hunter2"), "")
+	var le *bridge.LoginError
+	if !errors.As(err, &le) || le.Message != "security-key (FIDO) login is not supported" {
+		t.Fatalf("want FIDO unsupported error, got %v", err)
+	}
+}
+
 func TestLoginTwoPasswordUnsupported(t *testing.T) {
 	cfg := startFakeBridge(t, scenario{
 		wantPassword: "hunter2",

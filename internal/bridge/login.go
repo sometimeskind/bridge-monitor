@@ -128,7 +128,8 @@ func (c *Client) awaitLogin(ctx context.Context, stream pb.Bridge_RunEventStream
 		case le.GetError() != nil:
 			return "", &LoginError{Type: le.GetError().GetType(), Message: le.GetError().GetMessage()}
 
-		case le.GetTfaRequested() != nil:
+		case le.GetTfaRequested() != nil, le.GetTfaOrFidoRequested() != nil:
+			// TfaOrFidoRequested: account has both TOTP and FIDO; prefer TOTP.
 			if tfaSent {
 				continue
 			}
@@ -152,7 +153,7 @@ func (c *Client) awaitLogin(ctx context.Context, stream pb.Bridge_RunEventStream
 		case le.GetHvRequested() != nil:
 			return "", &LoginError{Type: pb.LoginErrorType_HV_ERROR}
 
-		case le.GetFidoRequested() != nil, le.GetTfaOrFidoRequested() != nil:
+		case le.GetFidoRequested() != nil:
 			return "", &LoginError{Message: "security-key (FIDO) login is not supported"}
 		}
 	}
