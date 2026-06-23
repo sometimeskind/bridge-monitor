@@ -18,6 +18,9 @@ type metrics struct {
 	accountConnected prometheus.Gauge
 	grpcUp           prometheus.Gauge
 	imapLoginOK      prometheus.Gauge
+
+	imapConsecFails int
+	imapNextProbe   time.Time
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -76,7 +79,23 @@ func (m *metrics) poll(ctx context.Context, configPath, emailFile, imapPasswordF
 		}
 	}
 	m.accountConnected.Set(boolToFloat(anyConnected))
-	m.imapLoginOK.Set(boolToFloat(m.probeIMAP(ctx, c, emailFile, imapPasswordFile)))
+
+	now := time.Now()
+	if !m.imapNextProbe.IsZero() && now.Before(m.imapNextProbe) {
+		slog.Debug("metrics poll: imap probe skipped (backoff)", "retry_in", m.imapNextProbe.Sub(now).Round(time.Second))
+		m.imapLoginOK.Set(0)
+	} else {
+		ok := m.probeIMAP(ctx, c, emailFile, imapPasswordFile)
+		m.imapLoginOK.Set(boolToFloat(ok))
+		if ok {
+			m.imapConsecFails = 0
+			m.imapNextProbe = time.Time{}
+		} else {
+			m.imapConsecFails++
+			m.imapNextProbe = now.Add(imapProbeBackoff(m.imapConsecFails))
+			slog.Info("metrics poll: imap probe backing off", "consec_fails", m.imapConsecFails, "retry_in", m.imapNextProbe.Sub(now).Round(time.Second))
+		}
+	}
 }
 
 // probeIMAP runs an authenticated IMAP LOGIN/LOGOUT against the bridge's
@@ -112,6 +131,18 @@ func (m *metrics) markDown() {
 	m.accountConnected.Set(0)
 	m.imapLoginOK.Set(0)
 	m.accountState.Reset()
+}
+
+// imapProbeBackoff returns the delay before the next IMAP probe after n
+// consecutive failures: 30s → 1m → 2m → 4m, capped at 5m.
+func imapProbeBackoff(n int) time.Duration {
+	const base = 30 * time.Second
+	const maxBackoff = 5 * time.Minute
+	d := base * (1 << (n - 1))
+	if d > maxBackoff || d <= 0 {
+		return maxBackoff
+	}
+	return d
 }
 
 func boolToFloat(b bool) float64 {
