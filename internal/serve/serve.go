@@ -47,7 +47,7 @@ func Run(ctx context.Context, opts Options) error {
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		m.runPoller(gctx, opts.GRPCConfigPath, opts.PollInterval)
+		m.runPoller(gctx, opts.GRPCConfigPath, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
 		return nil
 	})
 	g.Go(func() error { return serveHTTP(gctx, metricsSrv, "metrics") })

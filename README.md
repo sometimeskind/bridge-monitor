@@ -44,6 +44,7 @@ the sealed IMAP password (for change detection) are mounted.
 | `bridge_account_state{user,email}` | 0 = SIGNED_OUT, 1 = LOCKED, 2 = CONNECTED |
 | `bridge_account_connected` | 1 if any user is CONNECTED |
 | `bridge_grpc_up` | 1 if the last `GetUserList` poll succeeded |
+| `bridge_imap_login_ok` | 1 if an authenticated IMAP LOGIN against the local bridge listener succeeded on the last poll |
 
 ## IMAP password changes
 

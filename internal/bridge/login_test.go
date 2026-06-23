@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sometimeskind/bridge-monitor/internal/bridge"
+	"github.com/sometimeskind/bridge-monitor/internal/bridgetest"
 	"github.com/sometimeskind/bridge-monitor/internal/pb"
 )
 
@@ -27,12 +28,12 @@ func ctx(t *testing.T) context.Context {
 }
 
 func TestLoginWithTFA(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{
-		users: []*pb.User{{Id: "u1", Username: "me@example.com",
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{
+		Users: []*pb.User{{Id: "u1", Username: "me@example.com",
 			Addresses: []string{"me@example.com"}, State: pb.UserState_CONNECTED}},
-		wantPassword: "hunter2",
-		wantTOTP:     "123456",
-		imapPassword: []byte("imap-secret"),
+		WantPassword: "hunter2",
+		WantTOTP:     "123456",
+		IMAPPassword: []byte("imap-secret"),
 	})
 	c := connect(t, cfg)
 
@@ -49,7 +50,7 @@ func TestLoginWithTFA(t *testing.T) {
 }
 
 func TestLoginWrongPassword(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{wantPassword: "correct", wantTOTP: "123456"})
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{WantPassword: "correct", WantTOTP: "123456"})
 	c := connect(t, cfg)
 
 	_, err := c.Login(ctx(t), "me@example.com", []byte("wrong"), "123456")
@@ -60,7 +61,7 @@ func TestLoginWrongPassword(t *testing.T) {
 }
 
 func TestLoginWrongTOTP(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{wantPassword: "hunter2", wantTOTP: "999999"})
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{WantPassword: "hunter2", WantTOTP: "999999"})
 	c := connect(t, cfg)
 
 	_, err := c.Login(ctx(t), "me@example.com", []byte("hunter2"), "000000")
@@ -71,7 +72,7 @@ func TestLoginWrongTOTP(t *testing.T) {
 }
 
 func TestLoginNoTFA(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{wantPassword: "hunter2", imapPassword: []byte("imap-x")})
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{WantPassword: "hunter2", IMAPPassword: []byte("imap-x")})
 	c := connect(t, cfg)
 
 	res, err := c.Login(ctx(t), "me@example.com", []byte("hunter2"), "")
@@ -84,12 +85,12 @@ func TestLoginNoTFA(t *testing.T) {
 }
 
 func TestLoginAlreadyLoggedIn(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{
-		wantPassword: "hunter2",
-		imapPassword: []byte("imap-y"),
-		loginEmits: func(f *fakeBridge, username string) {
-			f.finishLoginAs(username)
-			f.emit(&pb.LoginEvent{Event: &pb.LoginEvent_AlreadyLoggedIn{
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{
+		WantPassword: "hunter2",
+		IMAPPassword: []byte("imap-y"),
+		LoginEmits: func(f *bridgetest.FakeBridge, username string) {
+			f.FinishLoginAs(username)
+			f.Emit(&pb.LoginEvent{Event: &pb.LoginEvent_AlreadyLoggedIn{
 				AlreadyLoggedIn: &pb.LoginFinishedEvent{UserID: "user-" + username}}})
 		},
 	})
@@ -105,12 +106,12 @@ func TestLoginAlreadyLoggedIn(t *testing.T) {
 }
 
 func TestLoginTfaOrFidoFallsBackToTOTP(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{
-		wantPassword: "hunter2",
-		wantTOTP:     "123456",
-		imapPassword: []byte("imap-secret"),
-		loginEmits: func(f *fakeBridge, username string) {
-			f.emit(&pb.LoginEvent{Event: &pb.LoginEvent_TfaOrFidoRequested{
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{
+		WantPassword: "hunter2",
+		WantTOTP:     "123456",
+		IMAPPassword: []byte("imap-secret"),
+		LoginEmits: func(f *bridgetest.FakeBridge, username string) {
+			f.Emit(&pb.LoginEvent{Event: &pb.LoginEvent_TfaOrFidoRequested{
 				TfaOrFidoRequested: &pb.LoginTfaOrFidoRequestedEvent{Username: username}}})
 		},
 	})
@@ -126,10 +127,10 @@ func TestLoginTfaOrFidoFallsBackToTOTP(t *testing.T) {
 }
 
 func TestLoginFidoOnlyUnsupported(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{
-		wantPassword: "hunter2",
-		loginEmits: func(f *fakeBridge, username string) {
-			f.emit(&pb.LoginEvent{Event: &pb.LoginEvent_FidoRequested{
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{
+		WantPassword: "hunter2",
+		LoginEmits: func(f *bridgetest.FakeBridge, username string) {
+			f.Emit(&pb.LoginEvent{Event: &pb.LoginEvent_FidoRequested{
 				FidoRequested: &pb.LoginFidoRequestedEvent{}}})
 		},
 	})
@@ -143,10 +144,10 @@ func TestLoginFidoOnlyUnsupported(t *testing.T) {
 }
 
 func TestLoginTwoPasswordUnsupported(t *testing.T) {
-	cfg := startFakeBridge(t, scenario{
-		wantPassword: "hunter2",
-		loginEmits: func(f *fakeBridge, username string) {
-			f.emit(&pb.LoginEvent{Event: &pb.LoginEvent_TwoPasswordRequested{
+	cfg := bridgetest.StartFakeBridge(t, bridgetest.Scenario{
+		WantPassword: "hunter2",
+		LoginEmits: func(f *bridgetest.FakeBridge, username string) {
+			f.Emit(&pb.LoginEvent{Event: &pb.LoginEvent_TwoPasswordRequested{
 				TwoPasswordRequested: &pb.LoginTwoPasswordsRequestedEvent{Username: username}}})
 		},
 	})
@@ -160,13 +161,13 @@ func TestLoginTwoPasswordUnsupported(t *testing.T) {
 }
 
 func TestLoginLogsOutConnectedUser(t *testing.T) {
-	fakeCfg := scenario{
-		users: []*pb.User{{Id: "u1", Username: "me@example.com",
+	fakeCfg := bridgetest.Scenario{
+		Users: []*pb.User{{Id: "u1", Username: "me@example.com",
 			Addresses: []string{"me@example.com"}, State: pb.UserState_CONNECTED}},
-		wantPassword: "hunter2",
-		imapPassword: []byte("imap-z"),
+		WantPassword: "hunter2",
+		IMAPPassword: []byte("imap-z"),
 	}
-	cfg := startFakeBridge(t, fakeCfg)
+	cfg := bridgetest.StartFakeBridge(t, fakeCfg)
 	c := connect(t, cfg)
 
 	if _, err := c.Login(ctx(t), "me@example.com", []byte("hunter2"), ""); err != nil {
