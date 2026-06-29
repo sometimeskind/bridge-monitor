@@ -30,11 +30,12 @@ type Options struct {
 func Run(ctx context.Context, opts Options) error {
 	reg := prometheus.NewRegistry()
 	m := newMetrics(reg)
+	ss := &streamState{}
 
 	web := newWebHandler(reauth.Config{
 		GRPCConfigPath:   opts.GRPCConfigPath,
 		IMAPPasswordFile: opts.IMAPPasswordFile,
-	}, opts.EmailFile)
+	}, opts.EmailFile, ss)
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
@@ -48,6 +49,10 @@ func Run(ctx context.Context, opts Options) error {
 
 	g.Go(func() error {
 		m.runPoller(gctx, opts.GRPCConfigPath, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
+		return nil
+	})
+	g.Go(func() error {
+		runStreamSubscriber(gctx, opts.GRPCConfigPath, ss, m)
 		return nil
 	})
 	g.Go(func() error { return serveHTTP(gctx, metricsSrv, "metrics") })

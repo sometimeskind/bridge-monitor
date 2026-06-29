@@ -14,6 +14,7 @@ import (
 
 // metrics holds the bridge gauges exported on /metrics.
 type metrics struct {
+	// poll-derived
 	accountState     *prometheus.GaugeVec
 	accountConnected prometheus.Gauge
 	grpcUp           prometheus.Gauge
@@ -21,6 +22,14 @@ type metrics struct {
 
 	imapConsecFails int
 	imapNextProbe   time.Time
+
+	// stream-derived
+	internetConnected    prometheus.Gauge
+	badEventsTotal       prometheus.Counter
+	lastBadEventTs       prometheus.Gauge
+	updateAvailable      prometheus.Gauge
+	usedBytes            prometheus.Gauge
+	imapLoginFailedTotal prometheus.Counter
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -41,8 +50,36 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "bridge_imap_login_ok",
 			Help: "1 if an authenticated IMAP LOGIN against the local bridge listener succeeded on the last poll, else 0.",
 		}),
+		internetConnected: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "bridge_internet_connected",
+			Help: "1 if Bridge can reach Proton's network (from RunEventStream InternetStatusEvent), else 0.",
+		}),
+		badEventsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "bridge_bad_events_total",
+			Help: "Total UserBadEvent messages received from Bridge (zombie de-auth indicator).",
+		}),
+		lastBadEventTs: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "bridge_last_bad_event_timestamp_seconds",
+			Help: "Unix timestamp of the most recent UserBadEvent; 0 if none seen since startup.",
+		}),
+		updateAvailable: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "bridge_update_available",
+			Help: "Bridge update state: 0=none, 1=manual update ready, 2=forced (Bridge will stop working).",
+		}),
+		usedBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "bridge_used_bytes",
+			Help: "Proton mailbox storage usage in bytes (from RunEventStream UsedBytesChangedEvent).",
+		}),
+		imapLoginFailedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "bridge_imap_login_failed_total",
+			Help: "Total ImapLoginFailedEvent messages received from Bridge (local IMAP LOGIN rejections).",
+		}),
 	}
-	reg.MustRegister(m.accountState, m.accountConnected, m.grpcUp, m.imapLoginOK)
+	reg.MustRegister(
+		m.accountState, m.accountConnected, m.grpcUp, m.imapLoginOK,
+		m.internetConnected, m.badEventsTotal, m.lastBadEventTs,
+		m.updateAvailable, m.usedBytes, m.imapLoginFailedTotal,
+	)
 	return m
 }
 

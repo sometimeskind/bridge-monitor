@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -24,15 +25,37 @@ const loginTimeout = 60 * time.Second
 type webHandler struct {
 	cfg       reauth.Config
 	emailFile string
+	stream    *streamState
 	tmpl      *template.Template
 	mu        sync.Mutex
 }
 
-func newWebHandler(cfg reauth.Config, emailFile string) *webHandler {
+func newWebHandler(cfg reauth.Config, emailFile string, stream *streamState) *webHandler {
+	funcs := template.FuncMap{
+		"usedBytesHuman": func(n int64) string {
+			const gb = 1 << 30
+			return fmt.Sprintf("%.1f GB", float64(n)/float64(gb))
+		},
+		"timeSince": func(t time.Time) string {
+			d := time.Since(t).Round(time.Second)
+			h := int(d.Hours())
+			m := int(d.Minutes()) % 60
+			s := int(d.Seconds()) % 60
+			switch {
+			case h > 0:
+				return fmt.Sprintf("%dh %dm ago", h, m)
+			case m > 0:
+				return fmt.Sprintf("%dm %ds ago", m, s)
+			default:
+				return fmt.Sprintf("%ds ago", s)
+			}
+		},
+	}
 	return &webHandler{
 		cfg:       cfg,
 		emailFile: emailFile,
-		tmpl:      template.Must(template.New("web").Parse(webTemplates)),
+		stream:    stream,
+		tmpl:      template.Must(template.New("web").Funcs(funcs).Parse(webTemplates)),
 	}
 }
 
@@ -46,7 +69,7 @@ func (h *webHandler) handleForm(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		slog.Warn("could not read email file for form prefill", "err", err)
 	}
-	h.render(w, "form", map[string]any{"Email": email})
+	h.render(w, "form", map[string]any{"Email": email, "Stream": h.stream.snapshot()})
 }
 
 func (h *webHandler) handleAuth(w http.ResponseWriter, r *http.Request) {
@@ -150,8 +173,29 @@ const webTemplates = `
 <title>Bridge re-auth</title>
 <style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:3rem auto;padding:0 1rem}
 label{display:block;margin:.75rem 0 .25rem}input{width:100%;padding:.5rem;font-size:1rem}
-button{margin-top:1rem;padding:.6rem 1rem;font-size:1rem}</style></head>
-<body><h1>Proton Bridge re-auth</h1>
+button{margin-top:1rem;padding:.6rem 1rem;font-size:1rem}
+.status{border:1px solid #dee2e6;border-radius:.375rem;padding:.75rem 1rem;margin-bottom:1.25rem}
+.status h2{margin:0 0 .5rem;font-size:1rem}
+.status table{border-collapse:collapse;width:100%}
+.status th{text-align:left;padding-right:1rem;font-weight:600;white-space:nowrap;width:1%}
+.status td{padding:.15rem 0}
+.banner-warn{background:#fff3cd;padding:.6rem .75rem;border-radius:.25rem;margin-bottom:.75rem}
+.banner-err{background:#f8d7da;padding:.6rem .75rem;border-radius:.25rem;margin-bottom:.75rem}</style></head>
+<body>
+<div class="status">
+<h2>Status</h2>
+<table>
+<tr><th>Internet</th><td>{{if .Stream.InternetOK}}connected{{else}}disconnected{{end}}</td></tr>
+{{if .Stream.UsedBytes}}<tr><th>Mailbox</th><td>{{usedBytesHuman .Stream.UsedBytes}}</td></tr>{{end}}
+{{if .Stream.HasBadEvent}}<tr><th>Last bad event</th><td>{{.Stream.LastBadEventMsg}} ({{timeSince .Stream.LastBadEvent}})</td></tr>{{end}}
+{{if .Stream.UpdateVersion}}<tr><th>Update</th><td>{{.Stream.UpdateVersion}}{{if .Stream.UpdateForced}} — forced, Bridge will stop working{{end}}</td></tr>{{end}}
+</table>
+</div>
+{{if .Stream.HasBadEvent}}<div class="banner-err">Bad event detected — possible zombie de-auth. Re-authenticate below.</div>{{end}}
+{{if .Stream.UpdateVersion}}<div class="{{if .Stream.UpdateForced}}banner-err{{else}}banner-warn{{end}}">
+{{if .Stream.UpdateForced}}Forced update: {{.Stream.UpdateVersion}} — Bridge will stop working without action.{{else}}Update available: {{.Stream.UpdateVersion}}{{end}}
+</div>{{end}}
+<h1>Proton Bridge re-auth</h1>
 <form method="post" action="/auth">
 <label for="email">Email</label>
 <input id="email" name="email" type="email" value="{{.Email}}" readonly>
