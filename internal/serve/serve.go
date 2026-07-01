@@ -18,6 +18,7 @@ import (
 // Options configures the serve command.
 type Options struct {
 	GRPCConfigPath   string
+	GRPCHost         string // non-empty → dial grpcHost:<port> over TCP (cross-pod)
 	EmailFile        string
 	IMAPPasswordFile string
 	MetricsAddr      string // e.g. ":9100"
@@ -34,6 +35,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	web := newWebHandler(reauth.Config{
 		GRPCConfigPath:   opts.GRPCConfigPath,
+		GRPCHost:         opts.GRPCHost,
 		IMAPPasswordFile: opts.IMAPPasswordFile,
 	}, opts.EmailFile, ss)
 
@@ -48,11 +50,11 @@ func Run(ctx context.Context, opts Options) error {
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		m.runPoller(gctx, opts.GRPCConfigPath, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
+		m.runPoller(gctx, opts.GRPCConfigPath, opts.GRPCHost, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
 		return nil
 	})
 	g.Go(func() error {
-		runStreamSubscriber(gctx, opts.GRPCConfigPath, ss, m)
+		runStreamSubscriber(gctx, opts.GRPCConfigPath, opts.GRPCHost, ss, m)
 		return nil
 	})
 	g.Go(func() error { return serveHTTP(gctx, metricsSrv, "metrics") })
