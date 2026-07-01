@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -77,10 +78,14 @@ func Connect(configPath, grpcHost string) (*Client, error) {
 }
 
 // dialTarget builds the grpc target. When grpcHost is set (cross-pod case),
-// connect to the bridge Service over TCP using the port from the config.
+// connect to the bridge Service over TCP. If grpcHost already contains a port
+// (host:port form) use it as-is; otherwise append the port from the config.
 // On Linux the default is the unix socket; TCP 127.0.0.1:<port> is the fallback.
 func dialTarget(cfg *ServerConfig, grpcHost string) string {
 	if grpcHost != "" {
+		if strings.Contains(grpcHost, ":") {
+			return grpcHost
+		}
 		return fmt.Sprintf("%s:%d", grpcHost, cfg.Port)
 	}
 	if cfg.FileSocketPath != "" {
