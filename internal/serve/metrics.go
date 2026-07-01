@@ -86,8 +86,8 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 // poll connects to the bridge, reads the user list, and updates the gauges. A
 // failure to connect or list users sets bridge_grpc_up=0 and clears the per-user
 // state so stale series do not linger.
-func (m *metrics) poll(ctx context.Context, configPath, emailFile, imapPasswordFile string) {
-	c, err := bridge.Connect(configPath)
+func (m *metrics) poll(ctx context.Context, configPath, grpcHost, emailFile, imapPasswordFile string) {
+	c, err := bridge.Connect(configPath, grpcHost)
 	if err != nil {
 		m.markDown()
 		slog.Warn("metrics poll: connect failed", "err", err)
@@ -190,11 +190,11 @@ func boolToFloat(b bool) float64 {
 }
 
 // runPoller polls immediately and then on every tick until ctx is cancelled.
-func (m *metrics) runPoller(ctx context.Context, configPath, emailFile, imapPasswordFile string, interval time.Duration) {
+func (m *metrics) runPoller(ctx context.Context, configPath, grpcHost, emailFile, imapPasswordFile string, interval time.Duration) {
 	pollOnce := func() {
 		pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		m.poll(pctx, configPath, emailFile, imapPasswordFile)
+		m.poll(pctx, configPath, grpcHost, emailFile, imapPasswordFile)
 	}
 	pollOnce()
 

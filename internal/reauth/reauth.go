@@ -24,6 +24,7 @@ var imapVerifyInterval = 2 * time.Second
 // Config locates the bridge gRPC config and the sealed IMAP password.
 type Config struct {
 	GRPCConfigPath   string
+	GRPCHost         string // non-empty → dial grpcHost:<port> over TCP (cross-pod)
 	IMAPPasswordFile string
 }
 
@@ -40,7 +41,7 @@ type Outcome struct {
 // Run performs the re-auth. A non-nil error means login failed; a *bridge.LoginError
 // carries a clean, user-facing message.
 func Run(ctx context.Context, cfg Config, email string, password []byte, totpCode string) (*Outcome, error) {
-	c, err := bridge.Connect(cfg.GRPCConfigPath)
+	c, err := bridge.Connect(cfg.GRPCConfigPath, cfg.GRPCHost)
 	if err != nil {
 		return nil, err
 	}

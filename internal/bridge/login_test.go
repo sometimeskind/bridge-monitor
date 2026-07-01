@@ -13,7 +13,7 @@ import (
 
 func connect(t *testing.T, configPath string) *bridge.Client {
 	t.Helper()
-	c, err := bridge.Connect(configPath)
+	c, err := bridge.Connect(configPath, "")
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

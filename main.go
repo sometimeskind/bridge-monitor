@@ -25,6 +25,7 @@ const (
 
 func main() {
 	grpcConfig := flag.String("grpc-config", defaultGRPCConfig(), "path to bridge grpcServerConfig.json")
+	grpcHost := flag.String("grpc-host", "", "bridge gRPC host for cross-pod TCP connection (default: use unix socket from grpc config)")
 	emailFile := flag.String("email-file", defaultEmailFile, "path to the login email secret")
 	imapPass := flag.String("imap-password-file", defaultIMAPPassFile, "path to the sealed IMAP password")
 	metricsAddr := flag.String("metrics-addr", ":9100", "metrics listen address")
@@ -43,6 +44,7 @@ func main() {
 
 	err := serve.Run(ctx, serve.Options{
 		GRPCConfigPath:   *grpcConfig,
+		GRPCHost:         *grpcHost,
 		EmailFile:        *emailFile,
 		IMAPPasswordFile: *imapPass,
 		MetricsAddr:      *metricsAddr,

@@ -52,13 +52,13 @@ func (s *streamState) snapshot() streamSnapshot {
 
 // runStreamSubscriber maintains a persistent RunEventStream subscription,
 // reconnecting on error until ctx is cancelled.
-func runStreamSubscriber(ctx context.Context, configPath string, s *streamState, m *metrics) {
+func runStreamSubscriber(ctx context.Context, configPath, grpcHost string, s *streamState, m *metrics) {
 	fails := 0
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := streamOnce(ctx, configPath, s, m); err != nil {
+		if err := streamOnce(ctx, configPath, grpcHost, s, m); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -77,8 +77,8 @@ func runStreamSubscriber(ctx context.Context, configPath string, s *streamState,
 }
 
 // streamOnce opens one RunEventStream connection and reads events until error.
-func streamOnce(ctx context.Context, configPath string, s *streamState, m *metrics) error {
-	c, err := bridge.Connect(configPath)
+func streamOnce(ctx context.Context, configPath, grpcHost string, s *streamState, m *metrics) error {
+	c, err := bridge.Connect(configPath, grpcHost)
 	if err != nil {
 		return err
 	}

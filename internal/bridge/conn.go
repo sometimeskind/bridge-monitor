@@ -42,10 +42,12 @@ type Client struct {
 	Bridge pb.BridgeClient
 }
 
-// Connect reads the given grpcServerConfig.json and dials the bridge over its
-// unix socket (TLS, with the server token pinned). The returned Client is ready
-// to use; lazily connected like all grpc.NewClient connections.
-func Connect(configPath string) (*Client, error) {
+// Connect reads the given grpcServerConfig.json and dials the bridge. When
+// grpcHost is non-empty it dials grpcHost:<port> over TCP (cross-pod case);
+// otherwise it uses the unix socket from the config (sidecar case). The
+// returned Client is ready to use; lazily connected like all grpc.NewClient
+// connections.
+func Connect(configPath, grpcHost string) (*Client, error) {
 	cfg, err := LoadServerConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -61,7 +63,7 @@ func Connect(configPath string) (*Client, error) {
 		MinVersion: tls.VersionTLS12,
 	})
 
-	target := dialTarget(cfg)
+	target := dialTarget(cfg, grpcHost)
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(transport),
 		grpc.WithPerRPCCredentials(tokenCreds{token: cfg.Token}),
@@ -74,9 +76,13 @@ func Connect(configPath string) (*Client, error) {
 	return &Client{conn: conn, Bridge: pb.NewBridgeClient(conn)}, nil
 }
 
-// dialTarget builds the grpc target. On Linux the bridge listens on a unix
-// socket; the TCP port is a fallback for other platforms.
-func dialTarget(cfg *ServerConfig) string {
+// dialTarget builds the grpc target. When grpcHost is set (cross-pod case),
+// connect to the bridge Service over TCP using the port from the config.
+// On Linux the default is the unix socket; TCP 127.0.0.1:<port> is the fallback.
+func dialTarget(cfg *ServerConfig, grpcHost string) string {
+	if grpcHost != "" {
+		return fmt.Sprintf("%s:%d", grpcHost, cfg.Port)
+	}
 	if cfg.FileSocketPath != "" {
 		return "unix://" + cfg.FileSocketPath
 	}
