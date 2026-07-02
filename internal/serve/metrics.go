@@ -81,6 +81,11 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		m.internetConnected, m.badEventsTotal, m.lastBadEventTs,
 		m.updateAvailable, m.usedBytes, m.imapLoginFailedTotal,
 	)
+	// Seed optimistic default: the bridge only emits InternetStatusEvent on
+	// change, so a healthy bridge that was already connected when the monitor
+	// starts will never send one. Starting at 1 avoids a false-positive alert
+	// while we wait for the first state-change event.
+	m.internetConnected.Set(1)
 	return m
 }
 
