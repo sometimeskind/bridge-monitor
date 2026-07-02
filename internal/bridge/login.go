@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -91,7 +92,11 @@ func (c *Client) Login(ctx context.Context, login string, password []byte, totp 
 	if err != nil {
 		return nil, fmt.Errorf("open event stream: %w", err)
 	}
-	defer func() { _, _ = c.Bridge.StopEventStream(context.WithoutCancel(ctx), &emptypb.Empty{}) }()
+	defer func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer stopCancel()
+		_, _ = c.Bridge.StopEventStream(stopCtx, &emptypb.Empty{})
+	}()
 
 	if _, err := c.Bridge.Login(ctx, &pb.LoginRequest{
 		Username: login,
