@@ -83,10 +83,6 @@ func (c *Client) Login(ctx context.Context, login string, password []byte, totp 
 		}
 	}
 
-	// Release any existing stream held by the background monitor subscriber so
-	// RunEventStream below can succeed. The subscriber reconnects after login.
-	_, _ = c.Bridge.StopEventStream(ctx, &emptypb.Empty{})
-
 	// Subscribe to the event stream BEFORE calling Login, otherwise the
 	// tfaRequested event can fire before we are listening.
 	streamCtx, cancel := context.WithCancel(ctx)

@@ -50,6 +50,78 @@ func (s *streamState) snapshot() streamSnapshot {
 	}
 }
 
+// subscriberCtrl manages the background RunEventStream subscriber goroutine so
+// the web handler can pause it cleanly before a re-auth attempt.
+//
+// The race it prevents: Login calls StopEventStream then RunEventStream. If the
+// subscriber's streamOnce is still alive, StopEventStream kills its stream,
+// streamOnce returns, and its deferred StopEventStream fires — which then kills
+// Login's newly-opened stream. By pausing (cancel + wait-for-exit) first, the
+// subscriber's defer has already run by the time Login calls RunEventStream.
+type subscriberCtrl struct {
+	parentCtx  context.Context
+	configPath string
+	grpcHost   string
+	ss         *streamState
+	m          *metrics
+
+	mu     sync.Mutex
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func newSubscriberCtrl(parentCtx context.Context, configPath, grpcHost string, ss *streamState, m *metrics) *subscriberCtrl {
+	sc := &subscriberCtrl{
+		parentCtx:  parentCtx,
+		configPath: configPath,
+		grpcHost:   grpcHost,
+		ss:         ss,
+		m:          m,
+	}
+	sc.launch()
+	return sc
+}
+
+func (sc *subscriberCtrl) launch() {
+	ctx, cancel := context.WithCancel(sc.parentCtx)
+	done := make(chan struct{})
+	sc.mu.Lock()
+	sc.cancel = cancel
+	sc.done = done
+	sc.mu.Unlock()
+	go func() {
+		defer close(done)
+		runStreamSubscriber(ctx, sc.configPath, sc.grpcHost, sc.ss, sc.m)
+	}()
+}
+
+// pause cancels the subscriber's context and blocks until the goroutine has
+// fully exited, including its deferred StopEventStream call. Must not be
+// called concurrently with another pause.
+func (sc *subscriberCtrl) pause() {
+	sc.mu.Lock()
+	cancel := sc.cancel
+	done := sc.done
+	sc.mu.Unlock()
+	cancel()
+	<-done
+}
+
+// resume launches a fresh subscriber goroutine. Must be called after pause.
+func (sc *subscriberCtrl) resume() {
+	sc.launch()
+}
+
+// waitForShutdown blocks until parentCtx is done and the current subscriber
+// goroutine has exited. Used by the serve errgroup for clean shutdown.
+func (sc *subscriberCtrl) waitForShutdown() {
+	<-sc.parentCtx.Done()
+	sc.mu.Lock()
+	done := sc.done
+	sc.mu.Unlock()
+	<-done
+}
+
 // runStreamSubscriber maintains a persistent RunEventStream subscription,
 // reconnecting on error until ctx is cancelled.
 func runStreamSubscriber(ctx context.Context, configPath, grpcHost string, s *streamState, m *metrics) {

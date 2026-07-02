@@ -26,11 +26,12 @@ type webHandler struct {
 	cfg       reauth.Config
 	emailFile string
 	stream    *streamState
+	sub       *subscriberCtrl
 	tmpl      *template.Template
 	mu        sync.Mutex
 }
 
-func newWebHandler(cfg reauth.Config, emailFile string, stream *streamState) *webHandler {
+func newWebHandler(cfg reauth.Config, emailFile string, stream *streamState, sub *subscriberCtrl) *webHandler {
 	funcs := template.FuncMap{
 		"usedBytesHuman": func(n int64) string {
 			const gb = 1 << 30
@@ -55,6 +56,7 @@ func newWebHandler(cfg reauth.Config, emailFile string, stream *streamState) *we
 		cfg:       cfg,
 		emailFile: emailFile,
 		stream:    stream,
+		sub:       sub,
 		tmpl:      template.Must(template.New("web").Funcs(funcs).Parse(webTemplates)),
 	}
 }
@@ -105,6 +107,12 @@ func (h *webHandler) handleAuth(w http.ResponseWriter, r *http.Request) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	// Pause the subscriber and wait for it to fully exit (including its deferred
+	// StopEventStream) before Login opens the stream, eliminating the race where
+	// the subscriber's cleanup defer kills the login stream mid-flight.
+	h.sub.pause()
+	defer h.sub.resume()
 
 	ctx, cancel := context.WithTimeout(r.Context(), loginTimeout)
 	defer cancel()
