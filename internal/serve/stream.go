@@ -98,13 +98,33 @@ func (sc *subscriberCtrl) launch() {
 // pause cancels the subscriber's context and blocks until the goroutine has
 // fully exited, including its deferred StopEventStream call. Must not be
 // called concurrently with another pause.
+//
+// When the bridge is slow (e.g. in a de-authed state), context cancellation
+// alone may not unblock stream.Recv() quickly. pause also sends StopEventStream
+// directly so the bridge closes the stream immediately, and falls back to a 5s
+// timeout if the goroutine still has not exited after that.
 func (sc *subscriberCtrl) pause() {
 	sc.mu.Lock()
 	cancel := sc.cancel
 	done := sc.done
 	sc.mu.Unlock()
 	cancel()
-	<-done
+
+	// Proactively tell the bridge to close the active stream. This unblocks
+	// the subscriber's stream.Recv() faster than waiting for gRPC to propagate
+	// context cancellation through a slow or degraded bridge.
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer stopCancel()
+	if c, err := bridge.Connect(sc.configPath, sc.grpcHost); err == nil {
+		_, _ = c.Bridge.StopEventStream(stopCtx, &emptypb.Empty{})
+		c.Close()
+	}
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		slog.Warn("subscriber goroutine did not exit within 5s; proceeding with reauth")
+	}
 }
 
 // resume launches a fresh subscriber goroutine. Must be called after pause.
