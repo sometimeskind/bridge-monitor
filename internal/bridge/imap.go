@@ -23,15 +23,13 @@ func (c *Client) MailServerSettings(ctx context.Context) (port int, useSSL bool,
 	return int(resp.GetImapPort()), resp.GetUseSSLForImap(), nil
 }
 
-// ProbeIMAPLogin opens an authenticated IMAP session against the bridge's
-// local listener and immediately logs out. It is the only signal that
-// distinguishes a de-authed session (Code=10013) from a healthy one: the
-// bridge daemon does not transition such a user out of CONNECTED locally, but
-// IMAP LOGIN fails with "no such user". Deliberately LOGIN -> LOGOUT only;
-// SELECT/FETCH would trigger a real mailbox sync against Proton.
-func ProbeIMAPLogin(ctx context.Context, port int, useSSL bool, username string, password []byte) error {
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-
+// ProbeIMAPLogin opens an authenticated IMAP session against addr (host:port)
+// and immediately logs out. It is the only signal that distinguishes a
+// de-authed session (Code=10013) from a healthy one: the bridge daemon does
+// not transition such a user out of CONNECTED locally, but IMAP LOGIN fails
+// with "no such user". Deliberately LOGIN -> LOGOUT only; SELECT/FETCH would
+// trigger a real mailbox sync against Proton.
+func ProbeIMAPLogin(ctx context.Context, addr string, useSSL bool, username string, password []byte) error {
 	var conn net.Conn
 	var err error
 	if useSSL {

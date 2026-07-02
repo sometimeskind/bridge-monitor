@@ -2,6 +2,7 @@ package bridge_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func probeCtx(t *testing.T) context.Context {
 func TestProbeIMAPLoginSuccess(t *testing.T) {
 	port := bridgetest.StartFakeIMAPServer(t, "me@example.com", "imap-secret", false)
 
-	if err := bridge.ProbeIMAPLogin(probeCtx(t), port, false, "me@example.com", []byte("imap-secret")); err != nil {
+	if err := bridge.ProbeIMAPLogin(probeCtx(t), fmt.Sprintf("127.0.0.1:%d", port), false, "me@example.com", []byte("imap-secret")); err != nil {
 		t.Fatalf("ProbeIMAPLogin: %v", err)
 	}
 }
@@ -27,7 +28,7 @@ func TestProbeIMAPLoginSuccess(t *testing.T) {
 func TestProbeIMAPLoginWrongCredentials(t *testing.T) {
 	port := bridgetest.StartFakeIMAPServer(t, "me@example.com", "imap-secret", false)
 
-	err := bridge.ProbeIMAPLogin(probeCtx(t), port, false, "me@example.com", []byte("wrong"))
+	err := bridge.ProbeIMAPLogin(probeCtx(t), fmt.Sprintf("127.0.0.1:%d", port), false, "me@example.com", []byte("wrong"))
 	if err == nil {
 		t.Fatal("ProbeIMAPLogin: want error for wrong credentials, got nil")
 	}
@@ -41,7 +42,7 @@ func TestProbeIMAPLoginConnectionRefused(t *testing.T) {
 	port := lis.Addr().(*net.TCPAddr).Port
 	lis.Close() // nothing listens on this port now
 
-	err = bridge.ProbeIMAPLogin(probeCtx(t), port, false, "me@example.com", []byte("imap-secret"))
+	err = bridge.ProbeIMAPLogin(probeCtx(t), fmt.Sprintf("127.0.0.1:%d", port), false, "me@example.com", []byte("imap-secret"))
 	if err == nil {
 		t.Fatal("ProbeIMAPLogin: want error for connection refused, got nil")
 	}
@@ -50,7 +51,7 @@ func TestProbeIMAPLoginConnectionRefused(t *testing.T) {
 func TestProbeIMAPLoginTLS(t *testing.T) {
 	port := bridgetest.StartFakeIMAPServer(t, "me@example.com", "imap-secret", true)
 
-	if err := bridge.ProbeIMAPLogin(probeCtx(t), port, true, "me@example.com", []byte("imap-secret")); err != nil {
+	if err := bridge.ProbeIMAPLogin(probeCtx(t), fmt.Sprintf("127.0.0.1:%d", port), true, "me@example.com", []byte("imap-secret")); err != nil {
 		t.Fatalf("ProbeIMAPLogin: %v", err)
 	}
 }

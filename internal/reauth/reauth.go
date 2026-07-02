@@ -79,9 +79,10 @@ func Run(ctx context.Context, cfg Config, email string, password []byte, totpCod
 // apart, returning nil as soon as one succeeds. No sleep follows the final
 // failed attempt.
 func verifyIMAPLogin(ctx context.Context, port int, useSSL bool, email string, password []byte) error {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	var lastErr error
 	for attempt := 0; attempt < imapVerifyAttempts; attempt++ {
-		lastErr = bridge.ProbeIMAPLogin(ctx, port, useSSL, email, password)
+		lastErr = bridge.ProbeIMAPLogin(ctx, addr, useSSL, email, password)
 		if lastErr == nil {
 			return nil
 		}
