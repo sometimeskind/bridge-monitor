@@ -19,7 +19,7 @@ func TestPollMarksDownOnBadConfig(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := newMetrics(reg)
 
-	m.poll(context.Background(), "/nonexistent/grpcServerConfig.json", "", "/nonexistent/email", "/nonexistent/imap-password")
+	m.poll(context.Background(), "/nonexistent/grpcServerConfig.json", "", "", "/nonexistent/email", "/nonexistent/imap-password")
 
 	if got := testutil.ToFloat64(m.grpcUp); got != 0 {
 		t.Errorf("bridge_grpc_up = %v, want 0", got)
@@ -49,7 +49,7 @@ func TestPollIMAPLoginOK(t *testing.T) {
 
 	reg := prometheus.NewRegistry()
 	m := newMetrics(reg)
-	m.poll(context.Background(), cfg, "", emailFile, imapPasswordFile)
+	m.poll(context.Background(), cfg, "", "", emailFile, imapPasswordFile)
 
 	if got := testutil.ToFloat64(m.imapLoginOK); got != 1 {
 		t.Errorf("bridge_imap_login_ok = %v, want 1", got)

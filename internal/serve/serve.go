@@ -20,6 +20,7 @@ type Options struct {
 	GRPCConfigPath   string
 	GRPCHost         string // non-empty → dial grpcHost:<port> over TCP (cross-pod)
 	EmailFile        string
+	IMAPHost         string // non-empty → dial this host:port directly, skipping MailServerSettings (cross-pod)
 	IMAPPasswordFile string
 	MetricsAddr      string // e.g. ":9100"
 	WebAddr          string // e.g. ":8080"
@@ -50,7 +51,7 @@ func Run(ctx context.Context, opts Options) error {
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		m.runPoller(gctx, opts.GRPCConfigPath, opts.GRPCHost, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
+		m.runPoller(gctx, opts.GRPCConfigPath, opts.GRPCHost, opts.IMAPHost, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
 		return nil
 	})
 	g.Go(func() error {

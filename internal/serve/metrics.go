@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -86,7 +87,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 // poll connects to the bridge, reads the user list, and updates the gauges. A
 // failure to connect or list users sets bridge_grpc_up=0 and clears the per-user
 // state so stale series do not linger.
-func (m *metrics) poll(ctx context.Context, configPath, grpcHost, emailFile, imapPasswordFile string) {
+func (m *metrics) poll(ctx context.Context, configPath, grpcHost, imapHost, emailFile, imapPasswordFile string) {
 	c, err := bridge.Connect(configPath, grpcHost)
 	if err != nil {
 		m.markDown()
@@ -122,7 +123,7 @@ func (m *metrics) poll(ctx context.Context, configPath, grpcHost, emailFile, ima
 		slog.Debug("metrics poll: imap probe skipped (backoff)", "retry_in", m.imapNextProbe.Sub(now).Round(time.Second))
 		m.imapLoginOK.Set(0)
 	} else {
-		ok := m.probeIMAP(ctx, c, emailFile, imapPasswordFile)
+		ok := m.probeIMAP(ctx, c, imapHost, emailFile, imapPasswordFile)
 		m.imapLoginOK.Set(boolToFloat(ok))
 		if ok {
 			m.imapConsecFails = 0
@@ -136,15 +137,27 @@ func (m *metrics) poll(ctx context.Context, configPath, grpcHost, emailFile, ima
 }
 
 // probeIMAP runs an authenticated IMAP LOGIN/LOGOUT against the bridge's
-// local listener, the only signal that distinguishes a de-authed session
-// (which stays CONNECTED locally) from a healthy one. Any failure along the
-// way — fetching the listener settings, reading the secrets, or the login
-// itself — reports unhealthy rather than failing the whole poll.
-func (m *metrics) probeIMAP(ctx context.Context, c *bridge.Client, emailFile, imapPasswordFile string) bool {
-	port, useSSL, err := c.MailServerSettings(ctx)
-	if err != nil {
-		slog.Warn("metrics poll: MailServerSettings failed", "err", err)
-		return false
+// listener, the only signal that distinguishes a de-authed session (which
+// stays CONNECTED locally) from a healthy one. Any failure along the way —
+// fetching the listener settings, reading the secrets, or the login itself —
+// reports unhealthy rather than failing the whole poll.
+//
+// When imapHost is non-empty it is used directly as the dial address (no TLS),
+// skipping the MailServerSettings gRPC call. This supports cross-pod setups
+// where the IMAP port is exposed via a socat ClusterIP proxy.
+func (m *metrics) probeIMAP(ctx context.Context, c *bridge.Client, imapHost, emailFile, imapPasswordFile string) bool {
+	var addr string
+	var useSSL bool
+	if imapHost != "" {
+		addr = imapHost
+	} else {
+		port, ssl, err := c.MailServerSettings(ctx)
+		if err != nil {
+			slog.Warn("metrics poll: MailServerSettings failed", "err", err)
+			return false
+		}
+		addr = fmt.Sprintf("127.0.0.1:%d", port)
+		useSSL = ssl
 	}
 	email, err := secrets.Read(emailFile)
 	if err != nil {
@@ -156,7 +169,7 @@ func (m *metrics) probeIMAP(ctx context.Context, c *bridge.Client, emailFile, im
 		slog.Warn("metrics poll: read imap password file failed", "err", err)
 		return false
 	}
-	if err := bridge.ProbeIMAPLogin(ctx, port, useSSL, email, []byte(password)); err != nil {
+	if err := bridge.ProbeIMAPLogin(ctx, addr, useSSL, email, []byte(password)); err != nil {
 		slog.Warn("metrics poll: imap login probe failed", "err", err)
 		return false
 	}
@@ -190,11 +203,11 @@ func boolToFloat(b bool) float64 {
 }
 
 // runPoller polls immediately and then on every tick until ctx is cancelled.
-func (m *metrics) runPoller(ctx context.Context, configPath, grpcHost, emailFile, imapPasswordFile string, interval time.Duration) {
+func (m *metrics) runPoller(ctx context.Context, configPath, grpcHost, imapHost, emailFile, imapPasswordFile string, interval time.Duration) {
 	pollOnce := func() {
 		pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		m.poll(pctx, configPath, grpcHost, emailFile, imapPasswordFile)
+		m.poll(pctx, configPath, grpcHost, imapHost, emailFile, imapPasswordFile)
 	}
 	pollOnce()
 
