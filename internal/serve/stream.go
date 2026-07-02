@@ -182,7 +182,11 @@ func streamOnce(ctx context.Context, configPath, grpcHost string, s *streamState
 	// Always stop the stream on exit, even if RunEventStream itself failed with
 	// AlreadyExists. Without this, a lingering stream on Bridge's side would
 	// prevent every subsequent RunEventStream from succeeding.
-	defer func() { _, _ = c.Bridge.StopEventStream(context.WithoutCancel(ctx), &emptypb.Empty{}) }()
+	defer func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer stopCancel()
+		_, _ = c.Bridge.StopEventStream(stopCtx, &emptypb.Empty{})
+	}()
 
 	stream, err := c.Bridge.RunEventStream(streamCtx, &pb.EventStreamRequest{ClientPlatform: "bridge-monitor"})
 	if err != nil {
