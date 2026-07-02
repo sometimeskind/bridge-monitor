@@ -34,11 +34,15 @@ func Run(ctx context.Context, opts Options) error {
 	m := newMetrics(reg)
 	ss := &streamState{}
 
+	g, gctx := errgroup.WithContext(ctx)
+
+	sub := newSubscriberCtrl(gctx, opts.GRPCConfigPath, opts.GRPCHost, ss, m)
+
 	web := newWebHandler(reauth.Config{
 		GRPCConfigPath:   opts.GRPCConfigPath,
 		GRPCHost:         opts.GRPCHost,
 		IMAPPasswordFile: opts.IMAPPasswordFile,
-	}, opts.EmailFile, ss)
+	}, opts.EmailFile, ss, sub)
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
@@ -48,14 +52,12 @@ func Run(ctx context.Context, opts Options) error {
 	web.routes(webMux)
 	webSrv := &http.Server{Addr: opts.WebAddr, Handler: webMux, ReadHeaderTimeout: 5 * time.Second}
 
-	g, gctx := errgroup.WithContext(ctx)
-
 	g.Go(func() error {
 		m.runPoller(gctx, opts.GRPCConfigPath, opts.GRPCHost, opts.IMAPHost, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
 		return nil
 	})
 	g.Go(func() error {
-		runStreamSubscriber(gctx, opts.GRPCConfigPath, opts.GRPCHost, ss, m)
+		sub.waitForShutdown()
 		return nil
 	})
 	g.Go(func() error { return serveHTTP(gctx, metricsSrv, "metrics") })
