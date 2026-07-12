@@ -127,7 +127,7 @@ func TestApplyStreamEvent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
-			m := newMetrics(reg)
+			m := newMetrics(reg, false)
 			s := &streamState{}
 			applyStreamEvent(tc.evt, s, m)
 			tc.check(t, s, m)

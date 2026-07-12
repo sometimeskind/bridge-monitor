@@ -27,11 +27,12 @@ type webHandler struct {
 	emailFile string
 	stream    *streamState
 	sub       *subscriberCtrl
+	imapOnly  bool
 	tmpl      *template.Template
 	mu        sync.Mutex
 }
 
-func newWebHandler(cfg reauth.Config, emailFile string, stream *streamState, sub *subscriberCtrl) *webHandler {
+func newWebHandler(cfg reauth.Config, emailFile string, stream *streamState, sub *subscriberCtrl, imapOnly bool) *webHandler {
 	funcs := template.FuncMap{
 		"usedBytesHuman": func(n int64) string {
 			const gb = 1 << 30
@@ -57,16 +58,23 @@ func newWebHandler(cfg reauth.Config, emailFile string, stream *streamState, sub
 		emailFile: emailFile,
 		stream:    stream,
 		sub:       sub,
+		imapOnly:  imapOnly,
 		tmpl:      template.Must(template.New("web").Funcs(funcs).Parse(webTemplates)),
 	}
 }
 
 func (h *webHandler) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /", h.handleForm)
-	mux.HandleFunc("POST /auth", h.handleAuth)
+	if !h.imapOnly {
+		mux.HandleFunc("POST /auth", h.handleAuth)
+	}
 }
 
 func (h *webHandler) handleForm(w http.ResponseWriter, _ *http.Request) {
+	if h.imapOnly {
+		h.render(w, "imap-only", nil)
+		return
+	}
 	email, err := secrets.Read(h.emailFile)
 	if err != nil {
 		slog.Warn("could not read email file for form prefill", "err", err)
@@ -213,6 +221,16 @@ button{margin-top:1rem;padding:.6rem 1rem;font-size:1rem}
 <input id="totp" name="totp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]*" required>
 <button type="submit">Re-authenticate</button>
 </form></body></html>{{end}}
+
+{{define "imap-only"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bridge monitor</title>
+<style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:3rem auto;padding:0 1rem}</style></head>
+<body>
+<h1>Bridge monitor</h1>
+<p>Running in IMAP-only mode. Bridge re-authentication is not available.</p>
+</body></html>{{end}}
 
 {{define "result"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8">

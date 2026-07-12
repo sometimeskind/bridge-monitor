@@ -25,24 +25,28 @@ type Options struct {
 	MetricsAddr      string // e.g. ":9100"
 	WebAddr          string // e.g. ":8080"
 	PollInterval     time.Duration
+	IMAPOnly         bool // disable all gRPC; derive health from IMAP probe only
 }
 
 // Run starts the metrics poller, the metrics HTTP server, and the web UI, and
 // blocks until ctx is cancelled or a server fails.
 func Run(ctx context.Context, opts Options) error {
 	reg := prometheus.NewRegistry()
-	m := newMetrics(reg)
+	m := newMetrics(reg, opts.IMAPOnly)
 	ss := &streamState{}
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	sub := newSubscriberCtrl(gctx, opts.GRPCConfigPath, opts.GRPCHost, ss, m)
+	var sub *subscriberCtrl
+	if !opts.IMAPOnly {
+		sub = newSubscriberCtrl(gctx, opts.GRPCConfigPath, opts.GRPCHost, ss, m)
+	}
 
 	web := newWebHandler(reauth.Config{
 		GRPCConfigPath:   opts.GRPCConfigPath,
 		GRPCHost:         opts.GRPCHost,
 		IMAPPasswordFile: opts.IMAPPasswordFile,
-	}, opts.EmailFile, ss, sub)
+	}, opts.EmailFile, ss, sub, opts.IMAPOnly)
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
@@ -53,13 +57,15 @@ func Run(ctx context.Context, opts Options) error {
 	webSrv := &http.Server{Addr: opts.WebAddr, Handler: webMux, ReadHeaderTimeout: 5 * time.Second}
 
 	g.Go(func() error {
-		m.runPoller(gctx, opts.GRPCConfigPath, opts.GRPCHost, opts.IMAPHost, opts.EmailFile, opts.IMAPPasswordFile, opts.PollInterval)
+		m.runPoller(gctx, opts.GRPCConfigPath, opts.GRPCHost, opts.IMAPHost, opts.EmailFile, opts.IMAPPasswordFile, opts.IMAPOnly, opts.PollInterval)
 		return nil
 	})
-	g.Go(func() error {
-		sub.waitForShutdown()
-		return nil
-	})
+	if !opts.IMAPOnly {
+		g.Go(func() error {
+			sub.waitForShutdown()
+			return nil
+		})
+	}
 	g.Go(func() error { return serveHTTP(gctx, metricsSrv, "metrics") })
 	g.Go(func() error { return serveHTTP(gctx, webSrv, "web") })
 
