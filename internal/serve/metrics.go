@@ -33,95 +33,104 @@ type metrics struct {
 	imapLoginFailedTotal prometheus.Counter
 }
 
-func newMetrics(reg prometheus.Registerer) *metrics {
+func newMetrics(reg prometheus.Registerer, imapOnly bool) *metrics {
 	m := &metrics{
-		accountState: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "bridge_account_state",
-			Help: "Bridge account state (0=SIGNED_OUT, 1=LOCKED, 2=CONNECTED).",
-		}, []string{"user", "email"}),
-		accountConnected: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "bridge_account_connected",
-			Help: "1 if any bridge user is CONNECTED, else 0.",
-		}),
-		grpcUp: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "bridge_grpc_up",
-			Help: "1 if the bridge gRPC API answered the last poll, else 0.",
-		}),
 		imapLoginOK: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "bridge_imap_login_ok",
 			Help: "1 if an authenticated IMAP LOGIN against the local bridge listener succeeded on the last poll, else 0.",
 		}),
-		internetConnected: prometheus.NewGauge(prometheus.GaugeOpts{
+	}
+	reg.MustRegister(m.imapLoginOK)
+
+	if !imapOnly {
+		m.accountState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "bridge_account_state",
+			Help: "Bridge account state (0=SIGNED_OUT, 1=LOCKED, 2=CONNECTED).",
+		}, []string{"user", "email"})
+		m.accountConnected = prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "bridge_account_connected",
+			Help: "1 if any bridge user is CONNECTED, else 0.",
+		})
+		m.grpcUp = prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "bridge_grpc_up",
+			Help: "1 if the bridge gRPC API answered the last poll, else 0.",
+		})
+		m.internetConnected = prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "bridge_internet_connected",
 			Help: "1 if Bridge can reach Proton's network (from RunEventStream InternetStatusEvent), else 0.",
-		}),
-		badEventsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+		})
+		m.badEventsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "bridge_bad_events_total",
 			Help: "Total UserBadEvent messages received from Bridge (zombie de-auth indicator).",
-		}),
-		lastBadEventTs: prometheus.NewGauge(prometheus.GaugeOpts{
+		})
+		m.lastBadEventTs = prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "bridge_last_bad_event_timestamp_seconds",
 			Help: "Unix timestamp of the most recent UserBadEvent; 0 if none seen since startup.",
-		}),
-		updateAvailable: prometheus.NewGauge(prometheus.GaugeOpts{
+		})
+		m.updateAvailable = prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "bridge_update_available",
 			Help: "Bridge update state: 0=none, 1=manual update ready, 2=forced (Bridge will stop working).",
-		}),
-		usedBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+		})
+		m.usedBytes = prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "bridge_used_bytes",
 			Help: "Proton mailbox storage usage in bytes (from RunEventStream UsedBytesChangedEvent).",
-		}),
-		imapLoginFailedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+		})
+		m.imapLoginFailedTotal = prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "bridge_imap_login_failed_total",
 			Help: "Total ImapLoginFailedEvent messages received from Bridge (local IMAP LOGIN rejections).",
-		}),
+		})
+		reg.MustRegister(
+			m.accountState, m.accountConnected, m.grpcUp,
+			m.internetConnected, m.badEventsTotal, m.lastBadEventTs,
+			m.updateAvailable, m.usedBytes, m.imapLoginFailedTotal,
+		)
+		// Seed optimistic default: the bridge only emits InternetStatusEvent on
+		// change, so a healthy bridge that was already connected when the monitor
+		// starts will never send one. Starting at 1 avoids a false-positive alert
+		// while we wait for the first state-change event.
+		m.internetConnected.Set(1)
 	}
-	reg.MustRegister(
-		m.accountState, m.accountConnected, m.grpcUp, m.imapLoginOK,
-		m.internetConnected, m.badEventsTotal, m.lastBadEventTs,
-		m.updateAvailable, m.usedBytes, m.imapLoginFailedTotal,
-	)
-	// Seed optimistic default: the bridge only emits InternetStatusEvent on
-	// change, so a healthy bridge that was already connected when the monitor
-	// starts will never send one. Starting at 1 avoids a false-positive alert
-	// while we wait for the first state-change event.
-	m.internetConnected.Set(1)
 	return m
 }
 
 // poll connects to the bridge, reads the user list, and updates the gauges. A
 // failure to connect or list users sets bridge_grpc_up=0 and clears the per-user
-// state so stale series do not linger.
-func (m *metrics) poll(ctx context.Context, configPath, grpcHost, imapHost, emailFile, imapPasswordFile string) {
-	c, err := bridge.Connect(configPath, grpcHost)
-	if err != nil {
-		m.markDown()
-		slog.Warn("metrics poll: connect failed", "err", err)
-		return
-	}
-	defer c.Close()
-
-	users, err := c.GetUsers(ctx)
-	if err != nil {
-		m.markDown()
-		slog.Warn("metrics poll: GetUserList failed", "err", err)
-		return
-	}
-
-	m.grpcUp.Set(1)
-	m.accountState.Reset()
-	anyConnected := false
-	for _, u := range users {
-		email := ""
-		if addrs := u.GetAddresses(); len(addrs) > 0 {
-			email = addrs[0]
+// state so stale series do not linger. When imapOnly is true all gRPC calls are
+// skipped and only the IMAP probe runs.
+func (m *metrics) poll(ctx context.Context, configPath, grpcHost, imapHost, emailFile, imapPasswordFile string, imapOnly bool) {
+	var c *bridge.Client
+	if !imapOnly {
+		var err error
+		c, err = bridge.Connect(configPath, grpcHost)
+		if err != nil {
+			m.markDown()
+			slog.Warn("metrics poll: connect failed", "err", err)
+			return
 		}
-		m.accountState.WithLabelValues(u.GetUsername(), email).Set(float64(u.GetState()))
-		if u.GetState() == pb.UserState_CONNECTED {
-			anyConnected = true
+		defer c.Close()
+
+		users, err := c.GetUsers(ctx)
+		if err != nil {
+			m.markDown()
+			slog.Warn("metrics poll: GetUserList failed", "err", err)
+			return
 		}
+
+		m.grpcUp.Set(1)
+		m.accountState.Reset()
+		anyConnected := false
+		for _, u := range users {
+			email := ""
+			if addrs := u.GetAddresses(); len(addrs) > 0 {
+				email = addrs[0]
+			}
+			m.accountState.WithLabelValues(u.GetUsername(), email).Set(float64(u.GetState()))
+			if u.GetState() == pb.UserState_CONNECTED {
+				anyConnected = true
+			}
+		}
+		m.accountConnected.Set(boolToFloat(anyConnected))
 	}
-	m.accountConnected.Set(boolToFloat(anyConnected))
 
 	now := time.Now()
 	if !m.imapNextProbe.IsZero() && now.Before(m.imapNextProbe) {
@@ -208,11 +217,11 @@ func boolToFloat(b bool) float64 {
 }
 
 // runPoller polls immediately and then on every tick until ctx is cancelled.
-func (m *metrics) runPoller(ctx context.Context, configPath, grpcHost, imapHost, emailFile, imapPasswordFile string, interval time.Duration) {
+func (m *metrics) runPoller(ctx context.Context, configPath, grpcHost, imapHost, emailFile, imapPasswordFile string, imapOnly bool, interval time.Duration) {
 	pollOnce := func() {
 		pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		m.poll(pctx, configPath, grpcHost, imapHost, emailFile, imapPasswordFile)
+		m.poll(pctx, configPath, grpcHost, imapHost, emailFile, imapPasswordFile, imapOnly)
 	}
 	pollOnce()
 

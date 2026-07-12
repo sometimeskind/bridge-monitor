@@ -27,6 +27,7 @@ func main() {
 	grpcConfig := flag.String("grpc-config", defaultGRPCConfig(), "path to bridge grpcServerConfig.json")
 	grpcHost := flag.String("grpc-host", "", "bridge gRPC host or host:port for cross-pod TCP connection (default: use unix socket from grpc config)")
 	imapHost := flag.String("imap-host", "", "IMAP host:port for cross-pod probe (default: use port from MailServerSettings on 127.0.0.1)")
+	imapOnly := flag.Bool("imap-only", false, "disable all gRPC; derive health from IMAP probe only (requires --imap-host)")
 	emailFile := flag.String("email-file", defaultEmailFile, "path to the login email secret")
 	imapPass := flag.String("imap-password-file", defaultIMAPPassFile, "path to the sealed IMAP password")
 	metricsAddr := flag.String("metrics-addr", ":9100", "metrics listen address")
@@ -40,6 +41,11 @@ func main() {
 		return
 	}
 
+	if *imapOnly && *imapHost == "" {
+		fmt.Fprintln(os.Stderr, "bridge-monitor: --imap-host is required when --imap-only is set")
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -47,6 +53,7 @@ func main() {
 		GRPCConfigPath:   *grpcConfig,
 		GRPCHost:         *grpcHost,
 		IMAPHost:         *imapHost,
+		IMAPOnly:         *imapOnly,
 		EmailFile:        *emailFile,
 		IMAPPasswordFile: *imapPass,
 		MetricsAddr:      *metricsAddr,
