@@ -82,3 +82,15 @@ jobs:
 
       - name: Health check — binary runs
         run: docker run --rm bridge-monitor:ci-local -version
+
+      - name: Output registry digest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: digest
+        env:
+          SHA: ${{ github.sha }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          TAG=sha-$(echo "$SHA" | cut -c1-7)
+          DIGEST=$(docker buildx imagetools inspect "ghcr.io/$OWNER/bridge-monitor:$TAG" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "ghcr.io/$OWNER/bridge-monitor:$TAG@$DIGEST"
